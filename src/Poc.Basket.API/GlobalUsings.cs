@@ -1,0 +1,10 @@
+﻿global using Azure.Identity;
+global using Basket.API.Infrastructure.ActionResults;
+global using Microsoft.AspNetCore;
+global using Microsoft.AspNetCore.Mvc;
+global using Microsoft.AspNetCore.Mvc.Filters;
+global using Microsoft.AspNetCore.Server.Kestrel.Core;
+global using Poc.Basket.API;
+global using Poc.Basket.API.Infrastructure.Exceptions;
+global using Serilog;
+global using System.Net;
