@@ -1,94 +1,120 @@
-var configuration = GetConfiguration();
-Log.Logger = CreateSerilogLogger(configuration);
+using Azure.Core;
+using Basket.API.Infrastructure.Filters;
+using Microsoft.OpenApi.Models;
+using Poc.Basket.API.Infrastructure.Filters;
 
-try
+var builder = WebApplication.CreateBuilder(args);
+
+AddConfiguration(builder.Configuration);
+
+builder.WebHost.ConfigureKestrel(options =>
 {
-    Log.Information("Configuring web host ({ApplicationContext})...", AppName);
-    var host = BuildWebHost(configuration, args);
+    var grpcPort = builder.Configuration.GetValue("GRPC_PORT", 5001);
+    var httpPort = builder.Configuration.GetValue("PORT", 80);
 
-    Log.Information("Starting web host ({ApplicationContext})...", AppName);
-    host.Run();
-
-    return 0;
-}
-catch (Exception ex)
-{
-    Log.Fatal(ex, "Program terminated unexpectedly ({ApplicationContext})!", AppName);
-    return 1;
-}
-finally
-{
-    Log.CloseAndFlush();
-
-}
-
-IWebHost BuildWebHost(IConfiguration config, string[] args)
-{
-#pragma warning disable CS0618 // Type or member is obsolete
-    return WebHost.CreateDefaultBuilder(args)
-        .CaptureStartupErrors(false)
-        .ConfigureKestrel(options =>
-        {
-            var ports = GetDefinedPorts(config);
-            options.Listen(IPAddress.Any, ports.httpPort, listenOptions =>
-            {
-                listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
-            });
-            options.Listen(IPAddress.Any, ports.grpcPort, listenOptions =>
-            {
-                listenOptions.Protocols = HttpProtocols.Http2;
-            });
-        })
-        .ConfigureAppConfiguration(x => x.AddConfiguration(config))
-        .UseStartup<Startup>()
-        .UseContentRoot(Directory.GetCurrentDirectory())
-        .UseSerilog()
-        .Build();
-#pragma warning restore CS0618 // Type or member is obsolete
-}
-
-IConfiguration GetConfiguration()
-{
-    // Assign basePath, then import from appsettings.json, then import variable from Environment
-    var configBuilder = new ConfigurationBuilder()
-        .SetBasePath(Directory.GetCurrentDirectory())
-        .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-        .AddEnvironmentVariables();
-
-    var config = configBuilder.Build();
-
-    // If using Azure keyVault, then import from Azure KeyVault again, then build again 
-    if (config.GetValue<bool>("useVault", false))
+    options.Listen(IPAddress.Any, httpPort, listenOptions =>
     {
-        var credential = new ClientSecretCredential(
-            config["Vault:TenantId"],
-            config["Vault:ClientId"],
-            config["Vault:ClientSecret"]);
-        configBuilder.AddAzureKeyVault(new Uri($"https://{config["Vault:Name"]}.vault.azure.net/"), credential);
-    }
+        listenOptions.Protocols = HttpProtocols.Http1AndHttp2;
+    });
 
-    return configBuilder.Build();
-}
-Serilog.ILogger CreateSerilogLogger(IConfiguration config)
+    options.Listen(IPAddress.Any, grpcPort, listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http2;
+    });
+});
+
+builder.Host.UseSerilog();
+
+// Add services to the container.
+builder.Services.AddGrpc(options =>
 {
-    var seqServerUrl = config["Serilog:SeqServerUrl"];
-    var logstashUrl = config["Serilog:LogStashUrl"];
-    var logger = new LoggerConfiguration()
+    options.EnableDetailedErrors = true;
+});
+
+builder.Services.AddApplicationInsightsTelemetry();
+builder.Services.AddApplicationInsightsKubernetesEnricher();
+
+builder.Services.AddControllers(options =>
+    {
+        options.Filters.Add(typeof(HttpGlobalExceptionFilter));
+        options.Filters.Add(typeof(ValidateModelStateFilter));
+    })
+    .AddJsonOptions(options => options.JsonSerializerOptions.WriteIndented = true);
+
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "eShopOnContainers - Basket HTTP API",
+        Version = "v1",
+        Description = "The Basket Service HTTP API"
+    });
+
+    options.AddSecurityDefinition("oauth2", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.OAuth2,
+        Flows = new OpenApiOAuthFlows()
+        {
+            Implicit = new OpenApiOAuthFlow()
+            {
+                AuthorizationUrl = new Uri($"{builder.Configuration.GetValue<string>("IdentityUrlExternal")}/connect/authorize"),
+                TokenUrl = new Uri($"{builder.Configuration.GetValue<string>("IdentityUrlExternal")}/connect/token"),
+                Scopes = new Dictionary<string, string>()
+                {
+                    { "basket", "Basket API" }
+                }
+            }
+        }
+    });
+});
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseHttpsRedirection();
+
+app.UseAuthorization();
+
+app.MapControllers();
+
+app.Run();
+
+Serilog.ILogger CreateSerilogLogger(IConfiguration configuration)
+{
+    var seqServerUrl = configuration["Serilog:SeqServerUrl"];
+    var logstashUrl = configuration["Serilog:LogstashgUrl"];
+    return new LoggerConfiguration()
         .MinimumLevel.Verbose()
-        .Enrich.WithProperty("ApplicationContext", AppName)
+        .Enrich.WithProperty("ApplicationContext", Program.AppName)
         .Enrich.FromLogContext()
         .WriteTo.Console()
         .WriteTo.Seq(string.IsNullOrWhiteSpace(seqServerUrl) ? "http://seq" : seqServerUrl)
         .WriteTo.Http(string.IsNullOrWhiteSpace(logstashUrl) ? "http://logstash:8080" : logstashUrl, null)
-        .ReadFrom.Configuration(config)
+        .ReadFrom.Configuration(configuration)
         .CreateLogger();
-    return logger;
 }
-(int httpPort, int grpcPort) GetDefinedPorts(IConfiguration config)
+void AddConfiguration(ConfigurationManager configuration)
 {
-    var grpcPort = config.GetValue("GRPC_PORT", 5001);
-    var port = config.GetValue("PORT", 80);
-    return (port, grpcPort);
+    configuration.SetBasePath(Directory.GetCurrentDirectory());
+    configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+    configuration.AddEnvironmentVariables();
+
+    if (configuration.GetValue("UseVault", false))
+    {
+        TokenCredential credential = new ClientSecretCredential(
+            configuration["Vault:TenantId"],
+            configuration["Vault:ClientId"],
+            configuration["Vault:ClientSecret"]);
+        configuration.AddAzureKeyVault(new Uri($"https://{configuration["Vault:Name"]}.vault.azure.net/"), credential);
+    }
 }
 public partial class Program
 {

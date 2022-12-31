@@ -15,9 +15,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{C9763C1E-E15
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{F2C340C5-1FAA-42EC-A597-B54BA78011E5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Poc.Basket.UnitTests", "tests\Poc.Basket.UnitTests\Poc.Basket.UnitTests.csproj", "{67C37C93-456F-4C69-81C9-D651C17FC40A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Poc.Basket.UnitTests", "tests\Poc.Basket.UnitTests\Poc.Basket.UnitTests.csproj", "{67C37C93-456F-4C69-81C9-D651C17FC40A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Poc.Basket.FunctionalTests", "tests\Poc.Basket.FunctionalTests\Poc.Basket.FunctionalTests.csproj", "{23B4CFE0-2B3D-443E-BF9A-970F21AA9281}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Poc.Basket.FunctionalTests", "tests\Poc.Basket.FunctionalTests\Poc.Basket.FunctionalTests.csproj", "{23B4CFE0-2B3D-443E-BF9A-970F21AA9281}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
