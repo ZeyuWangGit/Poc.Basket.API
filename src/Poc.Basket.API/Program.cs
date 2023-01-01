@@ -1,7 +1,9 @@
 using Azure.Core;
-using Basket.API.Infrastructure.Filters;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.OpenApi.Models;
+using Poc.Basket.API.Infrastructure.Extensions;
 using Poc.Basket.API.Infrastructure.Filters;
+using System.IdentityModel.Tokens.Jwt;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -70,6 +72,11 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+ConfigureAuthentication(builder);
+
+builder.Services.AddCustomHealthCheck(builder.Configuration);
+builder.Services.AddRedisConnection(builder.Configuration);
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -116,9 +123,30 @@ void AddConfiguration(ConfigurationManager configuration)
         configuration.AddAzureKeyVault(new Uri($"https://{configuration["Vault:Name"]}.vault.azure.net/"), credential);
     }
 }
+void ConfigureAuthentication(WebApplicationBuilder builder)
+{
+    // prevent from mapping "sub" claim to nameidentifier.   
+    JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Remove("sub");
+
+    var identityUrl = builder.Configuration.GetValue<string>("IdentityUrl");
+
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+
+    }).AddJwtBearer(options =>
+    {
+        options.Authority = identityUrl;
+        options.RequireHttpsMetadata = false;
+        options.Audience = "basket";
+    });
+}
 public partial class Program
 {
 
     public static string Namespace = typeof(Startup).Namespace;
     public static string AppName = Namespace.Substring(Namespace.LastIndexOf('.', Namespace.LastIndexOf('.') - 1) + 1);
 }
+
+
